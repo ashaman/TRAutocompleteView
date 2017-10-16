@@ -140,6 +140,8 @@ static NSTimeInterval const kSearchDelay = 0.3;
 
 - (void)dealloc
 {
+    _tableView.dataSource = nil;
+    _tableView.delegate = nil;
     [self.notificationCenter removeObserver:self];
 }
 
@@ -316,6 +318,14 @@ static NSTimeInterval const kSearchDelay = 0.3;
     }
 }
 
+- (id<TRSuggestionItem>)itemAtIndexPath:(NSIndexPath *)indexPath
+{
+    id<TRSuggestionItem> item = indexPath.row < self.suggestions.count ? self.suggestions[(NSUInteger) indexPath.row] : nil;
+    if (item != nil) {
+        NSAssert([item conformsToProtocol:@protocol(TRSuggestionItem)], @"Suggestion item must conform TRSuggestionItem");
+    }
+    return item;
+}
 
 #pragma mark - Table view data source
 
@@ -328,11 +338,14 @@ static NSTimeInterval const kSearchDelay = 0.3;
 {
     UITableViewCell<TRAutocompleteCell> *cell = [tableView dequeueReusableCellWithIdentifier:self.cellReuseIdentifier
                                                                                 forIndexPath:indexPath];
-    id<TRSuggestionItem> suggestion = self.suggestions[(NSUInteger) indexPath.row];
-    NSAssert([cell isKindOfClass:[UITableViewCell class]], @"Cell must inherit from UITableViewCell");
-    NSAssert([cell conformsToProtocol:@protocol(TRAutocompleteCell)], @"Cell must conform TRAutocompleteCell");
-    NSAssert([suggestion conformsToProtocol:@protocol(TRSuggestionItem)], @"Suggestion item must conform TRSuggestionItem");
-    [cell updateWithSuggestionItem:suggestion];
+    id<TRSuggestionItem> suggestion = [self itemAtIndexPath:indexPath];
+    if (suggestion != nil) {
+        NSAssert([cell isKindOfClass:[UITableViewCell class]], @"Cell must inherit from UITableViewCell");
+        NSAssert([cell conformsToProtocol:@protocol(TRAutocompleteCell)], @"Cell must conform TRAutocompleteCell");
+        [cell updateWithSuggestionItem:suggestion];
+    } else {
+        NSAssert(NO, @"There are less suggestion items in the array than expected. Seems there's a serious error in the app");
+    }
     return cell;
 }
 
@@ -341,17 +354,18 @@ static NSTimeInterval const kSearchDelay = 0.3;
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
-    id<TRSuggestionItem> suggestion = self.suggestions[(NSUInteger) indexPath.row];
-    NSAssert([suggestion conformsToProtocol:@protocol(TRSuggestionItem)], @"Suggestion item must conform TRSuggestionItem");
-    self.selectedSuggestion = suggestion;
-    if (self.didAutocompleteWith) {
-        self.didAutocompleteWith(suggestion);
+    id<TRSuggestionItem> suggestion = [self itemAtIndexPath:indexPath];
+    if (suggestion != nil) {
+        self.selectedSuggestion = suggestion;
+        if (self.didAutocompleteWith != nil) {
+            self.didAutocompleteWith(suggestion);
+        }
+        if (self.endEditingOnCompletion) {
+            [self.queryTextField resignFirstResponder];
+            self.queryTextField.text = suggestion.completionText;
+        }
+        self.hidden = YES;
     }
-    if (self.endEditingOnCompletion) {
-        [self.queryTextField resignFirstResponder];
-        self.queryTextField.text = suggestion.completionText;
-    }
-    self.hidden = YES;
 }
 
 - (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath
